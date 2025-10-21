@@ -53,16 +53,45 @@ async function main() {
     await page.getByRole('textbox', { name: '••••••••' }).fill(pw);
     await page.getByRole('button', { name: 'Prijavi se' }).click();
 
-    // Wait briefly for potential state update
-    await page.waitForTimeout(2000);
+    // Wait for page to load and potential state update
+    await page.waitForTimeout(3000);
 
-    const locator = page.locator('div').filter({ hasText: 'Nema prodaje' }).nth(1);
-    const text = (await locator.textContent()) || '';
-    const noSale = text.includes('Trenutno nema aktivnih prodaja');
+    // Try multiple selectors to find the sale status
+    let noSale = false;
+    let statusText = '';
+    
+    try {
+      // First try: look for the specific "Nema prodaje" text
+      const noSaleLocator = page.locator('div').filter({ hasText: 'Nema prodaje' });
+      if (await noSaleLocator.count() > 0) {
+        statusText = await noSaleLocator.nth(0).textContent() || '';
+        noSale = statusText.includes('Trenutno nema aktivnih prodaja');
+      } else {
+        // Second try: look for any text containing "nema aktivnih prodaja"
+        const generalLocator = page.locator('*').filter({ hasText: 'nema aktivnih prodaja' });
+        if (await generalLocator.count() > 0) {
+          statusText = await generalLocator.nth(0).textContent() || '';
+          noSale = true;
+        } else {
+          // Third try: look for any text containing "prodaja"
+          const saleLocator = page.locator('*').filter({ hasText: 'prodaja' });
+          if (await saleLocator.count() > 0) {
+            statusText = await saleLocator.nth(0).textContent() || '';
+            noSale = statusText.includes('nema') || statusText.includes('Nema');
+          }
+        }
+      }
+    } catch (err) {
+      console.log('Error finding sale status:', err.message);
+      // If we can't determine the status, assume no sale to avoid false positives
+      noSale = true;
+      statusText = 'Unable to determine status';
+    }
     
     const currentState = noSale ? 'no-sale' : 'sale-available';
     const lastState = getLastState();
     
+    console.log(`Status text found: "${statusText}"`);
     console.log(`Current state: ${currentState}, Last state: ${lastState || 'unknown'}`);
     
     if (currentState !== lastState) {
